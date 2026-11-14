@@ -34,12 +34,12 @@ def fetch(start,end):
 
 def main():
     today=datetime.datetime.now(TZ).date()
-    monday=today-datetime.timedelta(days=today.weekday())
+    monday=today-datetime.timedelta(days=today.weekday())+datetime.timedelta(days=7)
     events=[]; unavailable=[]; total=0
     # Request short ranges to respect server timetable limits.
     for w in range(1):
         start=monday+datetime.timedelta(weeks=w)
-        end=start+datetime.timedelta(days=2)
+        end=start+datetime.timedelta(days=4)
         payload=fetch(start,end)
         if payload.get('errors'): raise RuntimeError(f'API returned errors: {payload["errors"]}')
         for day in payload.get('days',[]):
