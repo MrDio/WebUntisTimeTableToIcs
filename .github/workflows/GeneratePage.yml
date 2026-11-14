@@ -1,281 +1,33 @@
 name: Update Calendar and Deploy to GitHub Pages
-
 on:
+  workflow_dispatch:
   schedule:
-    - cron: "0 6-14 * * 1-5"   # Every hour from 6 AM to 2 PM on Monday to Friday
-    - cron: "0 4,10,16,22 * * 0,6" # Every 6 hours on Saturday and Sunday
-    - cron: "30 6-7 * * *"  # Runs at 6:30 and 7:30
-  workflow_dispatch:       # Allows manual triggering of the workflow
-  push:
-    branches: ["main"]     # Triggers deployment when changes are pushed to main
-
+    - cron: '17 */6 * * *'
 permissions:
-  actions: read        # Allow reading of workflow run details and artifacts
-  contents: read       # Allow reading repository contents
-
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
 jobs:
   update-calendar:
-    runs-on: windows-latest
-    outputs:
-      changes_detected: ${{ steps.compare.outputs.changes_detected }}
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      # Download the previous script output (if available)
-      - name: Download Previous Script Output
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: GeneratePage.yml  # Your workflow file name
-          name: script-output         # Name of the artifact to download
-          path: previous_script_output.txt
-          branch: main
-        continue-on-error: true  # Ignore errors if there's no previous artifact (first run)
-
-      - name: Check if injected 'previous ICS' exists
-        id: check-inject-ics
-        run: |
-          if (Test-Path "previous_calendar.ics/calendar.ics") {
-            echo '::warning::Injected ICS file detected at previous_calendar.ics/calendar.ics, skipping download.'
-            echo "exists=true" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "exists=false" >> $env:GITHUB_OUTPUT
-          }
-        shell: pwsh
-
-      # Download the previous ICS (if available)
-      - name: Download Previous ICS
-        if: steps.check-inject-ics.outputs.exists == 'false'
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: GeneratePage.yml  # Your workflow file name
-          name: calendar
-          path: previous_calendar.ics
-          branch: main
-          workflow_search: true
-          check_artifacts: true
-          if_no_artifact_found: warn
-
-      # Debugging: List files after downloading the artifact
-      - name: List Files After Download
-        if: runner.debug == 1
-        run: |
-          Write-Host "Files in current directory:"
-          Get-ChildItem -Recurse
-        shell: pwsh
-
-      # Create output directory
-      - name: Create Output Directory
-        run: New-Item -ItemType Directory -Path .out -Force
-        shell: pwsh
-
-
-      # Run your PowerShell script and capture output
-      - name: Run PowerShell Script and Capture Output
-        run: |
-          if (Test-Path "./previous_calendar.ics/calendar.ics") {
-            Write-Host "::notice::Appending to the previous calendar."
-            ./timeTableToIcs.ps1 -appendToPreviousICSat "./previous_calendar.ics/calendar.ics" -OutputFilePath ".out/calendar.ics" -baseUrl ${{ secrets.BASE_URL }} -elementId ${{ secrets.ELEMENT_ID }} -elementType 5 -overrideSummaries ${{ secrets.OVERRIDE_SUMMARIES }} -culture ${{ secrets.CULTURE }} -outAllFormats -cookie ${{ secrets.COOKIE }} -tenantId ${{ secrets.TENANT_ID }} | Tee-Object -FilePath script_output.txt -Encoding utf8
-          } else {
-            Write-Host "::notice::No previous calendar found. Generating a new calendar."
-            ./timeTableToIcs.ps1 -OutputFilePath ".out/calendar.ics" -baseUrl ${{ secrets.BASE_URL }} -elementId ${{ secrets.ELEMENT_ID }} -elementType 5 -overrideSummaries ${{ secrets.OVERRIDE_SUMMARIES }} -outAllFormats -culture ${{ secrets.CULTURE }} -cookie ${{ secrets.COOKIE }} -tenantId ${{ secrets.TENANT_ID }} | Tee-Object -FilePath script_output.txt -Encoding utf8
-          }
-        shell: pwsh
-
-
-      # Debugging: List files after generation
-      - name: List Files After Generation
-        if: runner.debug == 1
-        run: |
-          Write-Host "Files in current directory:"
-          Get-ChildItem -Recurse
-        shell: pwsh
-
-      # Compare new script output with the previous script output
-      - name: Compare Script Outputs
-        id: compare
-        run: |
-          $previousScriptOutputPath = "previous_script_output.txt/script_output.txt"
-          Write-Host "Previous script output path: $previousScriptOutputPath"
-
-          if (-not (Test-Path script_output.txt)) {
-            Write-Host "::error::No script output!"
-            exit 0;
-          }
-          if (Test-Path $previousScriptOutputPath) {
-            Write-Host "Comparing previous script output with the new one:"
-            # Compare the two files
-            $diff = Compare-Object -ReferenceObject (Get-Content $previousScriptOutputPath) -DifferenceObject (Get-Content script_output.txt) | Out-String
-            if ($diff -ne "") {
-              Write-Host "::group::Differences found in script output:"
-              Write-Host "$diff"
-              Write-Host "::endgroup::"
-              Write-Host "::notice::Changes detected in script output."
-              echo "changes_detected=true" >> $env:GITHUB_OUTPUT
-            } else {
-              Write-Host "::notice::No differences found in script output."
-              echo "changes_detected=false" >> $env:GITHUB_OUTPUT
-            }
-          } else {
-            Write-Host "::notice::No previous script output found. Assuming changes."
-            echo "changes_detected=true" >> $env:GITHUB_OUTPUT
-          }
-        shell: pwsh
-
-      # Upload the new script output as an artifact for future comparison
-      - name: Upload Script Output Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: script-output
-          path: script_output.txt
-
-      # Warn if no changes were detected in the script output
-      - name: Warn if No Changes Detected
-        if: steps.compare.outputs.changes_detected == 'false'
-        run: echo "::warning::No changes detected in script output, skipping artifact upload and deployment."
-        shell: pwsh
-
-      # Upload the new calendar(s) as an artifact for deployment if changes were detected
-      - name: Upload Artifacts
-        if: steps.compare.outputs.changes_detected == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: calendar
-          path: ./.out/*
-          if-no-files-found: error
-          overwrite: false
-          include-hidden-files: true
-          
-  deploy:
-    needs: update-calendar
     runs-on: ubuntu-latest
-    if: needs.update-calendar.outputs.changes_detected == 'true'
-
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download ICS Artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          name: calendar
-          path: '.out'
-
-      # Generate index.html with links to all files in .out directory
-      - name: Generate index.html
-        run: |
-          echo "<!DOCTYPE html>" > .out/index.html
-          echo "<html>" >> .out/index.html
-          echo "<head>" >> .out/index.html
-          echo "  <meta charset=\"UTF-8\" />" >> .out/index.html
-          echo "  <title>WebUntis iCal Scraper output</title>" >> .out/index.html
-
-          # Quick inline CSS
-          echo "  <style>" >> .out/index.html
-          echo "    body { font-family: sans-serif; margin: 1rem; background: #fafafa; }" >> .out/index.html
-          echo "    table { border-collapse: collapse; width: auto; }" >> .out/index.html
-          echo "    td { padding: 0.5rem; vertical-align: middle; }" >> .out/index.html
-          echo "    button { margin-left: 0.5rem; background: #007bff; color: #fff; border: none; border-radius: 4px; padding: 0.3rem 0.6rem; cursor: pointer; }" >> .out/index.html
-          echo "    button:hover { background: #0056b3; }" >> .out/index.html
-          echo "    a { color: #007bff; }" >> .out/index.html
-          echo "    a:hover { text-decoration: underline; }" >> .out/index.html
-          echo "  </style>" >> .out/index.html
-
-          # JavaScript for copying link and importing calendar
-          echo "  <script>" >> .out/index.html
-          echo "    function copyLink(link) {" >> .out/index.html
-          echo "      navigator.clipboard.writeText(link);" >> .out/index.html
-          echo "      alert('Link copied: ' + link);" >> .out/index.html
-          echo "    }" >> .out/index.html
-          echo "    function importCalendar(fname) {" >> .out/index.html
-          echo "      // Build a webcals:// URL based on the current host/path"
-          echo "      // This assumes your .ics files are in the same directory as index.html"
-          echo "      const webcalsUrl = 'webcals://' + window.location.host + window.location.pathname.replace('index.html', '') + fname;" >> .out/index.html
-          echo "      // Redirect to the webcals URL to trigger the calendar import"
-          echo "      window.location.href = webcalsUrl;" >> .out/index.html
-          echo "    }" >> .out/index.html
-          echo "    function goBackToRepo() {" >> .out/index.html
-          echo "      const user = window.location.host.split('.')[0];" >> .out/index.html
-          echo "      const repo = window.location.pathname.split('/')[1];" >> .out/index.html
-          echo "      window.location.href = 'https://github.com/' + user + '/' + repo;" >> .out/index.html
-          echo "    }" >> .out/index.html
-          echo "  </script>" >> .out/index.html
-
-          echo "</head>" >> .out/index.html
-          echo "<body>" >> .out/index.html
-          echo "  <button style=\"position:absolute; top:10px; right:10px; z-index:1000;\" onclick=\"goBackToRepo()\">Back to Repo</button>" >> .out/index.html
-          echo "  <h1>Generated Files</h1>" >> .out/index.html
-          echo "  <div id='status-badges'></div>" >> .out/index.html
-          echo "  <div id='system-time' style='margin-top:10px; font-size:0.9em; color:#555;'>Last updated: $(date)</div>" >> .out/index.html
-          echo "  <script>" >> .out/index.html
-          echo "    (function() {" >> .out/index.html
-          echo "      const user = window.location.host.split('.')[0];" >> .out/index.html
-          echo "      const repo = window.location.pathname.split('/')[1] || '';" >> .out/index.html
-          echo "      const workflow = 'GeneratePage.yml';" >> .out/index.html
-          echo "      const baseUrl = 'https://github.com/' + user + '/' + repo + '/actions/workflows/' + workflow;" >> .out/index.html
-          echo "      const badgeUrl = baseUrl + '/badge.svg';" >> .out/index.html
-          echo "      const badgePushUrl = badgeUrl + '?event=push';" >> .out/index.html
-          echo "      document.getElementById('status-badges').innerHTML =" >> .out/index.html
-          echo "        '<a href=\"' + baseUrl + '\"><img src=\"' + badgeUrl + '\" alt=\"Update Calendar and Deploy to GitHub Pages\"/></a> | Last Push: <a href=\"' + baseUrl + '\"><img src=\"' + badgePushUrl + '\" alt=\"Last Push Badge\"/></a>';" >> .out/index.html
-          echo "    })();" >> .out/index.html
-          echo "  </script>" >> .out/index.html
-
-          # Start the invisible table
-          echo "  <table>" >> .out/index.html
-          echo "    <tbody>" >> .out/index.html
-
-          for file in .out/*; do
-            fname=$(basename "$file")
-
-            # Skip index.html itself
-            if [ "$fname" != "index.html" ]; then
-              echo "      <tr>" >> .out/index.html
-              # File name cell
-              echo "        <td>$fname</td>" >> .out/index.html
-
-              # If this file is an ICS, show the 'Import' button
-              if [[ $fname == *.ics ]]; then
-                echo "        <td><button onclick=\"importCalendar('$fname')\">Import</button></td>" >> .out/index.html
-              else
-                # Empty cell if not ICS
-                echo "        <td></td>" >> .out/index.html
-              fi
-
-              # Copy URL button cell
-              echo "        <td>" >> .out/index.html
-              echo "          <button onclick=\"copyLink(window.location.origin + window.location.pathname.replace('index.html', '') + '$fname')\">Copy URL</button>" >> .out/index.html
-              echo "        </td>" >> .out/index.html
-
-              # Download/Display button cell
-              echo "        <td>" >> .out/index.html
-              echo "          <button onclick=\"window.open('$fname', '_blank');\">Download</button>" >> .out/index.html
-              echo "        </td>" >> .out/index.html
-
-              echo "      </tr>" >> .out/index.html
-            fi
-          done
-
-          echo "    </tbody>" >> .out/index.html
-          echo "  </table>" >> .out/index.html
-
-          echo "</body>" >> .out/index.html
-          echo "</html>" >> .out/index.html
-        shell: bash
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Artifact
-        uses: actions/upload-pages-artifact@v3
+          python-version: '3.12'
+      - name: Generate ICS
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ELEMENT_ID: ${{ secrets.ELEMENT_ID }}
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          WEBUNTIS_COOKIE: ${{ secrets.COOKIE }}
+          SCHOOL_YEAR_ID: '22'
+        run: python sync.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          path: '.out'  # Directory containing the build artifacts
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          path: public
+      - uses: actions/deploy-pages@v4
