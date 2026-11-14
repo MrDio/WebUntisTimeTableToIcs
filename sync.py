@@ -37,9 +37,9 @@ def main():
     monday=today-datetime.timedelta(days=today.weekday())
     events=[]; unavailable=[]; total=0
     # Request short ranges to respect server timetable limits.
-    for w in range(5):
+    for w in range(1):
         start=monday+datetime.timedelta(weeks=w)
-        end=start+datetime.timedelta(days=6)
+        end=start+datetime.timedelta(days=2)
         payload=fetch(start,end)
         if payload.get('errors'): raise RuntimeError(f'API returned errors: {payload["errors"]}')
         for day in payload.get('days',[]):
