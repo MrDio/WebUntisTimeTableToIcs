@@ -1,33 +1,49 @@
+
 name: Update Calendar and Deploy to GitHub Pages
+
 on:
   workflow_dispatch:
   schedule:
     - cron: '17 */6 * * *'
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: pages
   cancel-in-progress: false
+
 jobs:
   update-calendar:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Generate ICS
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
           ELEMENT_ID: ${{ secrets.ELEMENT_ID }}
           TENANT_ID: ${{ secrets.TENANT_ID }}
-          WEBUNTIS_COOKIE: ${{ secrets.COOKIE }}
+          WEBUNTIS_COOKIE: ${{ secrets.WEBUNTIS_COOKIE }}
           SCHOOL_YEAR_ID: '22'
         run: python sync.py
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload calendar
+        uses: actions/upload-pages-artifact@v3
         with:
           path: public
-      - uses: actions/deploy-pages@v4
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
