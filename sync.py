@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 BASE = os.getenv('BASE_URL', 'moerike-gym-esslingen.webuntis.com').replace('https://','').strip('/')
 STUDENT = os.getenv('ELEMENT_ID','5028')
 TENANT = os.getenv('TENANT_ID','4203400')
-COOKIE = os.getenv('WEBUNTIS_COOKIE','')
+COOKIE = os.getenv('WEBUNTIS_COOKIE', '').strip()
 TZ = ZoneInfo('Europe/Berlin')
 
 def esc(s):
