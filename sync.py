@@ -23,14 +23,53 @@ def make_event(uid,start,end,summary,desc='',location='',all_day=False,status='C
     lines += [f'SUMMARY:{esc(summary)}',f'DESCRIPTION:{esc(desc)}',f'LOCATION:{esc(location)}',f'STATUS:{status}','END:VEVENT']
     return lines
 
-def fetch(start,end):
-    params=urllib.parse.urlencode({'start':start.isoformat(),'end':end.isoformat(),'format':6,'resourceType':'STUDENT','resources':STUDENT,'periodTypes':'','timetableType':'MY_TIMETABLE','layout':'START_TIME'})
-    url=f'https://{BASE}/WebUntis/api/rest/view/v1/timetable/entries?{params}'
-    headers={'Accept':'application/json','Tenant-Id':TENANT,'X-WebUntis-Api-School-Year-Id':os.getenv('SCHOOL_YEAR_ID','22'),'User-Agent':'Mozilla/5.0','Referer':f'https://{BASE}/timetable/my-student'}
-    if COOKIE: headers['Cookie']=COOKIE
-    req=urllib.request.Request(url,headers=headers)
-    with urllib.request.urlopen(req,timeout=30) as response:
-        return json.load(response)
+
+def fetch(start, end):
+    import urllib.error
+
+    params = urllib.parse.urlencode({
+        'start': start.isoformat(),
+        'end': end.isoformat(),
+        'format': 6,
+        'resourceType': 'STUDENT',
+        'resources': STUDENT,
+        'periodTypes': '',
+        'timetableType': 'MY_TIMETABLE',
+        'layout': 'START_TIME'
+    })
+
+    url = f'https://{BASE}/WebUntis/api/rest/view/v1/timetable/entries?{params}'
+
+    headers = {
+        'Accept': 'application/json',
+        'Tenant-Id': TENANT,
+        'X-Webuntis-Api-School-Year-Id': os.getenv('SCHOOL_YEAR_ID', '22'),
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': f'https://{BASE}/timetable/my-student'
+    }
+
+    if COOKIE:
+        headers['Cookie'] = COOKIE
+
+    print("API path: /WebUntis/api/rest/view/v1/timetable/entries")
+    print("Requested dates:", start, end)
+    print("Cookie configured:", bool(COOKIE))
+    print("Tenant configured:", bool(TENANT))
+    print("School year:", headers['X-Webuntis-Api-School-Year-Id'])
+
+    req = urllib.request.Request(url, headers=headers)
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            print("HTTP status:", response.status)
+            return json.load(response)
+
+    except urllib.error.HTTPError as e:
+        print("HTTP status:", e.code)
+        print("Response content type:", e.headers.get('Content-Type'))
+        print("Response body:", e.read(1000).decode('utf-8', errors='replace'))
+        raise RuntimeError(f"WebUntis API returned HTTP {e.code}") from None
+
 
 def main():
     today=datetime.datetime.now(TZ).date()
